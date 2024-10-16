@@ -1,8 +1,10 @@
 package prefetcher
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -288,6 +290,56 @@ func (p *Prefetcher) prefetch(ctx context.Context, hint string) error {
 			return fmt.Errorf("failed to fetch L2 output root %s: %w", hash, err)
 		}
 		return p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), output.Marshal())
+	case l2.HintL2AccountProof:
+		// hint = 8 bytes for block num, 20 bytes for address
+		if len(hintBytes) != 28 {
+			return fmt.Errorf("invalid L2 account hint: %x", hint)
+		}
+
+		blockNumBytes := hintBytes[:8]
+
+		address := common.Address(hintBytes[8:])
+		output, err := p.l2Fetcher.GetProof(ctx, address, []common.Hash{}, hexutil.Encode(blockNumBytes))
+		if err != nil {
+			return fmt.Errorf("failed to fetch account proof for address %s: %w", address, err)
+		}
+
+		for _, node := range output.AccountProof {
+			hash := crypto.Keccak256(node)
+			err := p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), node)
+			if err != nil {
+				return fmt.Errorf("failed to set account proof preimage %s: %w", hash, err)
+			}
+		}
+
+		return nil
+
+	case l2.HintL2ExecutionWitness:
+		// hint = 32 bytes for block hash
+		if len(hintBytes) != 32 {
+			return fmt.Errorf("invalid L2 execution witness hint: %x", hint)
+		}
+
+		blockHash := common.Hash(hintBytes)
+		output, err := p.l2Fetcher.ExecutionWitness(ctx, blockHash)
+		if err != nil {
+			return fmt.Errorf("failed to fetch L2 execution witness for block %s: %w", blockHash, err)
+		}
+
+		for codeHash := range output.Codes {
+			codeHashBytes, err := hexutil.Decode(codeHash)
+			if err != nil {
+				return fmt.Errorf("failed to parse execution witness code: %w", err)
+			}
+
+			hash := crypto.Keccak256(codeHashBytes)
+			err = p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), codeHashBytes)
+			if err != nil {
+				return fmt.Errorf("failed to set account proof preimage %s: %w", hash, err)
+			}
+		}
+
+		return nil
 	}
 	return fmt.Errorf("unknown hint type: %v", hintType)
 }
@@ -321,16 +373,26 @@ func (p *Prefetcher) storeTrieNodes(values []hexutil.Bytes) error {
 
 // parseHint parses a hint string in wire protocol. Returns the hint type, requested hash and error (if any).
 func parseHint(hint string) (string, []byte, error) {
-	hintType, bytesStr, found := strings.Cut(hint, " ")
-	if !found {
+	splitStr := strings.Split(hint, " ")
+	if len(splitStr) < 2 {
 		return "", nil, fmt.Errorf("unsupported hint: %s", hint)
 	}
 
-	hintBytes, err := hexutil.Decode(bytesStr)
-	if err != nil {
-		return "", make([]byte, 0), fmt.Errorf("invalid bytes: %s", bytesStr)
+	hintType := splitStr[0]
+	bytesStr := splitStr[1:]
+
+	decodedArgs := make([][]byte, len(bytesStr))
+	for _, arg := range bytesStr {
+		argBytes, err := hex.DecodeString(arg)
+
+		if err != nil {
+			return "", make([]byte, 0), fmt.Errorf("invalid bytes: %s", bytesStr)
+		}
+
+		decodedArgs = append(decodedArgs, argBytes)
 	}
-	return hintType, hintBytes, nil
+
+	return hintType, bytes.Join(decodedArgs, []byte{}), nil
 }
 
 func getPrecompiledContract(address common.Address) vm.PrecompiledContract {
