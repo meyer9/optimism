@@ -47,9 +47,6 @@ func RunProgram(logger log.Logger, preimageOracle io.ReadWriter, preimageHinter 
 	bootInfo := NewBootstrapClient(pClient).BootInfo()
 	logger.Info("Program Bootstrapped", "bootInfo", bootInfo)
 
-	hClient.Hint(l2.ExecutionWitnessHint{BlockNum: bootInfo.L2ClaimBlockNumber + 1})
-	hClient.Hint(l2.AccountProofHint{Address: predeploys.L2ToL1MessagePasserAddr, BlockNumber: bootInfo.L2ClaimBlockNumber})
-
 	return runDerivation(
 		logger,
 		bootInfo.RollupConfig,
@@ -72,7 +69,10 @@ func runDerivation(logger log.Logger, cfg *rollup.Config, l2Cfg *params.ChainCon
 	if err != nil {
 		return fmt.Errorf("failed to create oracle-backed L2 chain: %w", err)
 	}
-	l2Source := l2.NewOracleEngine(cfg, logger, engineBackend)
+
+	l2Source := l2.NewOracleEngine(cfg, logger, engineBackend, func(blockNum uint64) {
+		hClient.Hint(l2.AccountProofHint{BlockNumber: blockNum, Address: predeploys.L2ToL1MessagePasserAddr})
+	})
 
 	logger.Info("Starting derivation")
 	d := cldr.NewDriver(logger, cfg, l1Source, l1BlobsSource, l2Source, l2ClaimBlockNum)

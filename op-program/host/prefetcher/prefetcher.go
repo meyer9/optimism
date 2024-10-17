@@ -63,8 +63,13 @@ type Prefetcher struct {
 	l1Fetcher     L1Source
 	l1BlobFetcher L1BlobSource
 	l2Fetcher     L2Source
-	lastHint      string
 	kvStore       kvstore.KV
+
+	// lastHint is the last hint that was received, which should relate to the next preimage that is requested.
+	lastHint string
+
+	// lastBulkHint is the last execution witness or account proof hint that was requested. These provide multiple preimages, including those which should relate to the next preimage. Does a bulkier fetch than lastHint.
+	lastBulkHint string
 }
 
 func NewPrefetcher(logger log.Logger, l1Fetcher L1Source, l1BlobFetcher L1BlobSource, l2Fetcher L2Source, kvStore kvstore.KV) *Prefetcher {
@@ -79,14 +84,46 @@ func NewPrefetcher(logger log.Logger, l1Fetcher L1Source, l1BlobFetcher L1BlobSo
 
 func (p *Prefetcher) Hint(hint string) error {
 	p.logger.Trace("Received hint", "hint", hint)
-	hintType, hintBytes, err := parseHint(hint)
-
+	hintType, _, err := parseHint(hint)
 	if err != nil {
 		return err
 	}
 
-	switch hintType {
+	if hintType == l2.HintL2ExecutionWitness || hintType == l2.HintL2AccountProof {
+		p.lastBulkHint = hint
+	} else {
+		p.lastHint = hint
+	}
+	return nil
+}
 
+func (p *Prefetcher) GetPreimage(ctx context.Context, key common.Hash) ([]byte, error) {
+	p.logger.Trace("Pre-image requested", "key", key)
+	pre, err := p.kvStore.Get(key)
+	// Use a loop to keep retrying the prefetch as long as the key is not found
+	// This handles the case where the prefetch downloads a preimage, but it is then deleted unexpectedly
+	// before we get to read it.
+	for errors.Is(err, kvstore.ErrNotFound) && p.lastHint != "" {
+		hint := p.lastHint
+		if err := p.prefetch(ctx, hint); err != nil {
+			return nil, fmt.Errorf("prefetch failed: %w", err)
+		}
+		pre, err = p.kvStore.Get(key)
+		if err != nil {
+			p.logger.Error("Fetched pre-images for last hint but did not find required key", "hint", hint, "key", key)
+		}
+	}
+	return pre, err
+}
+
+// bulkPrefetch prefetches multiple preimages at once. This is used for execution witness and account proof hints.
+func (p *Prefetcher) bulkPrefetch(ctx context.Context, hint string) error {
+	hintType, hintBytes, err := parseHint(hint)
+	if err != nil {
+		return err
+	}
+	p.logger.Debug("Bulk prefetching", "type", hintType, "bytes", hexutil.Bytes(hintBytes))
+	switch hintType {
 	case l2.HintL2AccountProof:
 		// hint = 8 bytes for block num, 20 bytes for address
 		if len(hintBytes) != 28 {
@@ -128,7 +165,7 @@ func (p *Prefetcher) Hint(hint string) error {
 	case l2.HintL2ExecutionWitness:
 		p.logger.Info("fetching execution witness!", "hint", hint)
 
-		// hint = 32 bytes for block hash
+		// hint = 8 bytes for block num
 		if len(hintBytes) != 8 {
 			return fmt.Errorf("invalid L2 execution witness hint: %x", hint)
 		}
@@ -176,29 +213,10 @@ func (p *Prefetcher) Hint(hint string) error {
 		return nil
 	default:
 	}
-	p.lastHint = hint
-	return nil
+	return fmt.Errorf("unknown hint type: %v", hintType)
 }
 
-func (p *Prefetcher) GetPreimage(ctx context.Context, key common.Hash) ([]byte, error) {
-	p.logger.Trace("Pre-image requested", "key", key)
-	pre, err := p.kvStore.Get(key)
-	// Use a loop to keep retrying the prefetch as long as the key is not found
-	// This handles the case where the prefetch downloads a preimage, but it is then deleted unexpectedly
-	// before we get to read it.
-	for errors.Is(err, kvstore.ErrNotFound) && p.lastHint != "" {
-		hint := p.lastHint
-		if err := p.prefetch(ctx, hint); err != nil {
-			return nil, fmt.Errorf("prefetch failed: %w", err)
-		}
-		pre, err = p.kvStore.Get(key)
-		if err != nil {
-			p.logger.Error("Fetched pre-images for last hint but did not find required key", "hint", hint, "key", key)
-		}
-	}
-	return pre, err
-}
-
+// prefetch fetches the lastHint and stores the preimages in the kv store. This may call bulkPrefetch if available which will cache multiple preimages at a time.
 func (p *Prefetcher) prefetch(ctx context.Context, hint string) error {
 	hintType, hintBytes, err := parseHint(hint)
 	if err != nil {
@@ -356,6 +374,28 @@ func (p *Prefetcher) prefetch(ctx context.Context, hint string) error {
 			return err
 		}
 		return p.storeTransactions(txs)
+	case l2.HintL2Output:
+		if len(hintBytes) != 32 {
+			return fmt.Errorf("invalid L2 output hint: %x", hint)
+		}
+		hash := common.Hash(hintBytes)
+		output, err := p.l2Fetcher.OutputByRoot(ctx, hash)
+		if err != nil {
+			return fmt.Errorf("failed to fetch L2 output root %s: %w", hash, err)
+		}
+		return p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), output.Marshal())
+	}
+
+	// below here, bulk prefetchers should be used first
+	if p.lastBulkHint != "" {
+		bulkHint := p.lastBulkHint
+		p.lastBulkHint = ""
+		p.logger.Info("Bulk prefetching", "hint", bulkHint)
+		return p.bulkPrefetch(ctx, bulkHint)
+	}
+
+	switch hintType {
+
 	case l2.HintL2StateNode:
 		if len(hintBytes) != 32 {
 			return fmt.Errorf("invalid L2 state node hint: %x", hint)
@@ -377,16 +417,6 @@ func (p *Prefetcher) prefetch(ctx context.Context, hint string) error {
 			return fmt.Errorf("failed to fetch L2 contract code %s: %w", hash, err)
 		}
 		return p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), code)
-	case l2.HintL2Output:
-		if len(hintBytes) != 32 {
-			return fmt.Errorf("invalid L2 output hint: %x", hint)
-		}
-		hash := common.Hash(hintBytes)
-		output, err := p.l2Fetcher.OutputByRoot(ctx, hash)
-		if err != nil {
-			return fmt.Errorf("failed to fetch L2 output root %s: %w", hash, err)
-		}
-		return p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), output.Marshal())
 	}
 	return fmt.Errorf("unknown hint type: %v", hintType)
 }
@@ -418,26 +448,22 @@ func (p *Prefetcher) storeTrieNodes(values []hexutil.Bytes) error {
 	return nil
 }
 
-// parseHint parses a hint string in wire protocol. Returns the hint type, requested hash and error (if any).
+// parseHint parses a hint string in wire protocol. Returns the hint type, concatenation of requested arguments, and error (if any).
 func parseHint(hint string) (string, []byte, error) {
 	splitStr := strings.Split(hint, " ")
 	if len(splitStr) < 2 {
 		return "", nil, fmt.Errorf("unsupported hint: %s", hint)
 	}
 
-	fmt.Println(splitStr)
-
+	// split command from args
 	hintType := splitStr[0]
-	bytesStr := splitStr[1:]
+	hintPayloadComponents := splitStr[1:]
 
-	decodedArgs := make([][]byte, len(bytesStr))
-	for _, arg := range bytesStr {
-		argBytes, err := hexutil.Decode(arg)
-
-		fmt.Println(arg, argBytes)
-
+	decodedArgs := make([][]byte, len(hintPayloadComponents))
+	for _, argHex := range hintPayloadComponents {
+		argBytes, err := hexutil.Decode(argHex)
 		if err != nil {
-			return "", make([]byte, 0), fmt.Errorf("invalid bytes: %s", bytesStr)
+			return "", make([]byte, 0), fmt.Errorf("invalid bytes: %s", hintPayloadComponents)
 		}
 
 		decodedArgs = append(decodedArgs, argBytes)

@@ -2,7 +2,6 @@ package host
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ethereum-optimism/optimism/op-program/host/prefetcher"
 	"github.com/ethereum-optimism/optimism/op-program/host/types"
@@ -40,7 +39,6 @@ func (s *L2ExperimentalClient) ExecutionWitness(ctx context.Context, blockNum ui
 
 	err := s.client.CallContext(ctx, &witness, "debug_executionWitness", hexutil.EncodeUint64(blockNum), true)
 	if err != nil {
-		fmt.Println(err)
 		return nil, err
 	}
 	return &witness, nil

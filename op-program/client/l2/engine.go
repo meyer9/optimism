@@ -18,7 +18,8 @@ import (
 var ErrNotFound = errors.New("not found")
 
 type OracleEngine struct {
-	api *engineapi.L2EngineAPI
+	api       *engineapi.L2EngineAPI
+	hintBlock func(uint64)
 
 	// backend is the actual implementation used to create and process blocks. It is specifically a
 	// engineapi.CachingEngineBackend to ensure that blocks are stored when they are created and don't need to be
@@ -27,12 +28,13 @@ type OracleEngine struct {
 	rollupCfg *rollup.Config
 }
 
-func NewOracleEngine(rollupCfg *rollup.Config, logger log.Logger, backend engineapi.CachingEngineBackend) *OracleEngine {
+func NewOracleEngine(rollupCfg *rollup.Config, logger log.Logger, backend engineapi.CachingEngineBackend, hintBlock func(uint64)) *OracleEngine {
 	engineAPI := engineapi.NewL2EngineAPI(logger, backend, nil)
 	return &OracleEngine{
 		api:       engineAPI,
 		backend:   backend,
 		rollupCfg: rollupCfg,
+		hintBlock: hintBlock,
 	}
 }
 
@@ -41,6 +43,9 @@ func (o *OracleEngine) L2OutputRoot(l2ClaimBlockNum uint64) (eth.Bytes32, error)
 	if outBlock == nil {
 		return eth.Bytes32{}, fmt.Errorf("failed to get L2 block at %d", l2ClaimBlockNum)
 	}
+
+	o.hintBlock(outBlock.Number.Uint64())
+
 	stateDB, err := o.backend.StateAt(outBlock.Root)
 	if err != nil {
 		return eth.Bytes32{}, fmt.Errorf("failed to open L2 state db at block %s: %w", outBlock.Hash(), err)
