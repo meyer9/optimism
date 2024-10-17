@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-program/client/l1"
 	"github.com/ethereum-optimism/optimism/op-program/client/l2"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-service/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -47,6 +48,7 @@ func RunProgram(logger log.Logger, preimageOracle io.ReadWriter, preimageHinter 
 	logger.Info("Program Bootstrapped", "bootInfo", bootInfo)
 
 	hClient.Hint(l2.ExecutionWitnessHint{BlockNum: bootInfo.L2ClaimBlockNumber + 1})
+	hClient.Hint(l2.AccountProofHint{Address: predeploys.L2ToL1MessagePasserAddr, BlockNumber: bootInfo.L2ClaimBlockNumber})
 
 	return runDerivation(
 		logger,

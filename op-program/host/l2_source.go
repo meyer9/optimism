@@ -68,6 +68,7 @@ func NewL2Source(ctx context.Context, logger log.Logger, config *config.Config) 
 	if err != nil {
 		return nil, err
 	}
+
 	experimentalClient := NewL2ExperimentalClient(experimentalL2Client, experimentalRPC)
 	source.experimentalClient = experimentalClient
 	source.experimentalEnabled = true

@@ -2,7 +2,7 @@ package host
 
 import (
 	"context"
-	"encoding/binary"
+	"fmt"
 
 	"github.com/ethereum-optimism/optimism/op-program/host/prefetcher"
 	"github.com/ethereum-optimism/optimism/op-program/host/types"
@@ -38,11 +38,9 @@ func (s *L2ExperimentalClient) NodeByHash(ctx context.Context, hash common.Hash)
 func (s *L2ExperimentalClient) ExecutionWitness(ctx context.Context, blockNum uint64) (*types.ExecutionWitness, error) {
 	var witness types.ExecutionWitness
 
-	var blockNumBytes [8]byte
-	binary.BigEndian.PutUint64(blockNumBytes[:], blockNum)
-
-	err := s.client.CallContext(ctx, &witness, "debug_executionWitness", hexutil.Encode(blockNumBytes[:]), "true")
+	err := s.client.CallContext(ctx, &witness, "debug_executionWitness", hexutil.EncodeUint64(blockNum), true)
 	if err != nil {
+		fmt.Println(err)
 		return nil, err
 	}
 	return &witness, nil

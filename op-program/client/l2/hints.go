@@ -61,17 +61,17 @@ func (l L2OutputHint) Hint() string {
 
 type AccountProofHint struct {
 	BlockNumber uint64
-	Address     common.Hash
+	Address     common.Address
 }
 
 var _ preimage.Hint = AccountProofHint{}
 
 func (l AccountProofHint) Hint() string {
-	var blockNumBytes [4]byte
+	var blockNumBytes [8]byte
 
 	binary.BigEndian.PutUint64(blockNumBytes[:], l.BlockNumber)
 
-	return HintL2AccountProof + " " + hexutil.Encode(blockNumBytes[:]) + " " + (common.Hash)(l.Address).String()
+	return HintL2AccountProof + " " + hexutil.Encode(blockNumBytes[:]) + " " + l.Address.Hex()
 }
 
 type ExecutionWitnessHint struct {

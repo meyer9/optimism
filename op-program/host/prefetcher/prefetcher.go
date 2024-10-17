@@ -90,18 +90,32 @@ func (p *Prefetcher) Hint(hint string) error {
 	case l2.HintL2AccountProof:
 		// hint = 8 bytes for block num, 20 bytes for address
 		if len(hintBytes) != 28 {
-			return fmt.Errorf("invalid L2 account hint: %x", hint)
+			return fmt.Errorf("invalid L2 account hint: %x", hintBytes)
 		}
 
 		blockNumBytes := hintBytes[:8]
 
+		blockNum := binary.BigEndian.Uint64(blockNumBytes)
+
 		address := common.Address(hintBytes[8:])
-		output, err := p.l2Fetcher.GetProof(context.TODO(), address, []common.Hash{}, hexutil.Encode(blockNumBytes))
+		output, err := p.l2Fetcher.GetProof(context.TODO(), address, []common.Hash{{}}, hexutil.EncodeUint64(blockNum))
 		if err != nil {
 			return fmt.Errorf("failed to fetch account proof for address %s: %w", address, err)
 		}
 
 		for _, node := range output.AccountProof {
+			hash := crypto.Keccak256(node)
+			err := p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), node)
+			if err != nil {
+				return fmt.Errorf("failed to set account proof preimage %s: %w", hash, err)
+			}
+		}
+
+		if len(output.StorageProof) == 0 {
+			return fmt.Errorf("no storage proof found for address %s", address)
+		}
+
+		for _, node := range output.StorageProof[0].Proof {
 			hash := crypto.Keccak256(node)
 			err := p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), node)
 			if err != nil {
@@ -136,8 +150,6 @@ func (p *Prefetcher) Hint(hint string) error {
 				return fmt.Errorf("failed to parse execution witness code: %w", err)
 			}
 
-			fmt.Println("savedCode", codeKey, codeVal)
-
 			err = p.kvStore.Put(preimage.Keccak256Key(codeKeyBytes).PreimageKey(), codeValBytes)
 			if err != nil {
 				return fmt.Errorf("failed to set account proof preimage %s: %w", common.Hash(codeKeyBytes), err)
@@ -145,7 +157,6 @@ func (p *Prefetcher) Hint(hint string) error {
 		}
 
 		for stateHash, value := range output.State {
-
 			stateHashBytes, err := hexutil.Decode(stateHash)
 			if err != nil {
 				return fmt.Errorf("failed to parse execution witness code: %w", err)
@@ -155,8 +166,6 @@ func (p *Prefetcher) Hint(hint string) error {
 			if err != nil {
 				return fmt.Errorf("failed to parse execution witness code: %w", err)
 			}
-
-			fmt.Println("saved", stateHash, value)
 
 			err = p.kvStore.Put(preimage.Keccak256Key(stateHashBytes).PreimageKey(), valueBytes)
 			if err != nil {
@@ -416,12 +425,16 @@ func parseHint(hint string) (string, []byte, error) {
 		return "", nil, fmt.Errorf("unsupported hint: %s", hint)
 	}
 
+	fmt.Println(splitStr)
+
 	hintType := splitStr[0]
 	bytesStr := splitStr[1:]
 
 	decodedArgs := make([][]byte, len(bytesStr))
 	for _, arg := range bytesStr {
 		argBytes, err := hexutil.Decode(arg)
+
+		fmt.Println(arg, argBytes)
 
 		if err != nil {
 			return "", make([]byte, 0), fmt.Errorf("invalid bytes: %s", bytesStr)
