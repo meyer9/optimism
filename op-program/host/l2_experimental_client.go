@@ -2,11 +2,13 @@ package host
 
 import (
 	"context"
+	"encoding/binary"
 
 	"github.com/ethereum-optimism/optimism/op-program/host/prefetcher"
+	"github.com/ethereum-optimism/optimism/op-program/host/types"
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/stateless"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 type L2ExperimentalClient struct {
@@ -33,9 +35,13 @@ func (s *L2ExperimentalClient) NodeByHash(ctx context.Context, hash common.Hash)
 	panic("unsupported")
 }
 
-func (s *L2ExperimentalClient) ExecutionWitness(ctx context.Context, blockHash common.Hash) (*stateless.Witness, error) {
-	var witness stateless.Witness
-	err := s.client.CallContext(ctx, &witness, "debug_executionWitness", blockHash)
+func (s *L2ExperimentalClient) ExecutionWitness(ctx context.Context, blockNum uint64) (*types.ExecutionWitness, error) {
+	var witness types.ExecutionWitness
+
+	var blockNumBytes [8]byte
+	binary.BigEndian.PutUint64(blockNumBytes[:], blockNum)
+
+	err := s.client.CallContext(ctx, &witness, "debug_executionWitness", hexutil.Encode(blockNumBytes[:]), "true")
 	if err != nil {
 		return nil, err
 	}

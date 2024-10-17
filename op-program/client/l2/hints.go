@@ -2,9 +2,9 @@ package l2
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	preimage "github.com/ethereum-optimism/optimism/op-preimage"
 )
@@ -71,13 +71,18 @@ func (l AccountProofHint) Hint() string {
 
 	binary.BigEndian.PutUint64(blockNumBytes[:], l.BlockNumber)
 
-	return HintL2AccountProof + " " + hex.EncodeToString(blockNumBytes[:]) + " " + (common.Hash)(l.Address).String()
+	return HintL2AccountProof + " " + hexutil.Encode(blockNumBytes[:]) + " " + (common.Hash)(l.Address).String()
 }
 
-type ExecutionWitnessHint common.Hash
+type ExecutionWitnessHint struct {
+	BlockNum uint64
+}
 
 var _ preimage.Hint = ExecutionWitnessHint{}
 
 func (l ExecutionWitnessHint) Hint() string {
-	return HintL2ExecutionWitness + " " + (common.Hash)(l).String()
+	var blockNumBytes [8]byte
+	binary.BigEndian.PutUint64(blockNumBytes[:], l.BlockNum)
+
+	return HintL2ExecutionWitness + " " + hexutil.Encode(blockNumBytes[:])
 }

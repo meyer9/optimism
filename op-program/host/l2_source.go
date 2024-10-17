@@ -6,11 +6,11 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-program/host/config"
 	"github.com/ethereum-optimism/optimism/op-program/host/prefetcher"
+	programTypes "github.com/ethereum-optimism/optimism/op-program/host/types"
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -105,19 +105,19 @@ func (l *L2Source) InfoAndTxsByHash(ctx context.Context, blockHash common.Hash) 
 
 // OutputByRoot implements prefetcher.L2Source.
 func (l *L2Source) OutputByRoot(ctx context.Context, root common.Hash) (eth.Output, error) {
-	if l.experimentalEnabled {
-		return l.experimentalClient.OutputByRoot(ctx, root)
-	}
+	// if l.experimentalEnabled {
+	// 	return l.experimentalClient.OutputByRoot(ctx, root)
+	// }
 	return l.canonicalEthClient.OutputByRoot(ctx, root)
 }
 
 // ExecutionWitness implements prefetcher.L2Source.
-func (l *L2Source) ExecutionWitness(ctx context.Context, blockHash common.Hash) (*stateless.Witness, error) {
+func (l *L2Source) ExecutionWitness(ctx context.Context, blockNum uint64) (*programTypes.ExecutionWitness, error) {
 	if !l.experimentalEnabled {
-		l.logger.Error("Experimental source is not enabled, cannot fetch execution witness", "blockHash", blockHash)
+		l.logger.Error("Experimental source is not enabled, cannot fetch execution witness", "blockNum", blockNum)
 		panic("experimental source is not enabled")
 	}
-	return l.experimentalClient.ExecutionWitness(ctx, blockHash)
+	return l.experimentalClient.ExecutionWitness(ctx, blockNum)
 }
 
 // GetProof implements prefetcher.L2Source.

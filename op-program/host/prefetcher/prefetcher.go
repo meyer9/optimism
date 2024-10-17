@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -15,10 +14,10 @@ import (
 	"github.com/ethereum-optimism/optimism/op-program/client/l2"
 	"github.com/ethereum-optimism/optimism/op-program/client/mpt"
 	"github.com/ethereum-optimism/optimism/op-program/host/kvstore"
+	programTypes "github.com/ethereum-optimism/optimism/op-program/host/types"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -56,7 +55,7 @@ type L2Source interface {
 	// GetProof returns an account proof result, with any optional requested storage proofs.
 	GetProof(ctx context.Context, address common.Address, storage []common.Hash, blockTag string) (*eth.AccountResult, error)
 	// ExecutionWitness returns the execution witness for the given block hash.
-	ExecutionWitness(ctx context.Context, blockHash common.Hash) (*stateless.Witness, error)
+	ExecutionWitness(ctx context.Context, blockNum uint64) (*programTypes.ExecutionWitness, error)
 }
 
 type Prefetcher struct {
@@ -80,6 +79,94 @@ func NewPrefetcher(logger log.Logger, l1Fetcher L1Source, l1BlobFetcher L1BlobSo
 
 func (p *Prefetcher) Hint(hint string) error {
 	p.logger.Trace("Received hint", "hint", hint)
+	hintType, hintBytes, err := parseHint(hint)
+
+	if err != nil {
+		return err
+	}
+
+	switch hintType {
+
+	case l2.HintL2AccountProof:
+		// hint = 8 bytes for block num, 20 bytes for address
+		if len(hintBytes) != 28 {
+			return fmt.Errorf("invalid L2 account hint: %x", hint)
+		}
+
+		blockNumBytes := hintBytes[:8]
+
+		address := common.Address(hintBytes[8:])
+		output, err := p.l2Fetcher.GetProof(context.TODO(), address, []common.Hash{}, hexutil.Encode(blockNumBytes))
+		if err != nil {
+			return fmt.Errorf("failed to fetch account proof for address %s: %w", address, err)
+		}
+
+		for _, node := range output.AccountProof {
+			hash := crypto.Keccak256(node)
+			err := p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), node)
+			if err != nil {
+				return fmt.Errorf("failed to set account proof preimage %s: %w", hash, err)
+			}
+		}
+
+		return nil
+
+	case l2.HintL2ExecutionWitness:
+		p.logger.Info("fetching execution witness!", "hint", hint)
+
+		// hint = 32 bytes for block hash
+		if len(hintBytes) != 8 {
+			return fmt.Errorf("invalid L2 execution witness hint: %x", hint)
+		}
+
+		blockNum := binary.BigEndian.Uint64(hintBytes)
+		output, err := p.l2Fetcher.ExecutionWitness(context.TODO(), blockNum)
+		if err != nil {
+			return fmt.Errorf("failed to fetch L2 execution witness for block %d: %w", blockNum, err)
+		}
+
+		for codeKey, codeVal := range output.Codes {
+			codeKeyBytes, err := hexutil.Decode(codeKey)
+			if err != nil {
+				return fmt.Errorf("failed to parse execution witness code: %w", err)
+			}
+
+			codeValBytes, err := hexutil.Decode(codeVal)
+			if err != nil {
+				return fmt.Errorf("failed to parse execution witness code: %w", err)
+			}
+
+			fmt.Println("savedCode", codeKey, codeVal)
+
+			err = p.kvStore.Put(preimage.Keccak256Key(codeKeyBytes).PreimageKey(), codeValBytes)
+			if err != nil {
+				return fmt.Errorf("failed to set account proof preimage %s: %w", common.Hash(codeKeyBytes), err)
+			}
+		}
+
+		for stateHash, value := range output.State {
+
+			stateHashBytes, err := hexutil.Decode(stateHash)
+			if err != nil {
+				return fmt.Errorf("failed to parse execution witness code: %w", err)
+			}
+
+			valueBytes, err := hexutil.Decode(value)
+			if err != nil {
+				return fmt.Errorf("failed to parse execution witness code: %w", err)
+			}
+
+			fmt.Println("saved", stateHash, value)
+
+			err = p.kvStore.Put(preimage.Keccak256Key(stateHashBytes).PreimageKey(), valueBytes)
+			if err != nil {
+				return fmt.Errorf("failed to set account proof preimage %s: %w", common.Hash(stateHashBytes), err)
+			}
+		}
+
+		return nil
+	default:
+	}
 	p.lastHint = hint
 	return nil
 }
@@ -269,6 +356,7 @@ func (p *Prefetcher) prefetch(ctx context.Context, hint string) error {
 		if err != nil {
 			return fmt.Errorf("failed to fetch L2 state node %s: %w", hash, err)
 		}
+		p.logger.Info("Fetched L2 state node", "hash", hash, "node", hexutil.Encode(node))
 		return p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), node)
 	case l2.HintL2Code:
 		if len(hintBytes) != 32 {
@@ -290,56 +378,6 @@ func (p *Prefetcher) prefetch(ctx context.Context, hint string) error {
 			return fmt.Errorf("failed to fetch L2 output root %s: %w", hash, err)
 		}
 		return p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), output.Marshal())
-	case l2.HintL2AccountProof:
-		// hint = 8 bytes for block num, 20 bytes for address
-		if len(hintBytes) != 28 {
-			return fmt.Errorf("invalid L2 account hint: %x", hint)
-		}
-
-		blockNumBytes := hintBytes[:8]
-
-		address := common.Address(hintBytes[8:])
-		output, err := p.l2Fetcher.GetProof(ctx, address, []common.Hash{}, hexutil.Encode(blockNumBytes))
-		if err != nil {
-			return fmt.Errorf("failed to fetch account proof for address %s: %w", address, err)
-		}
-
-		for _, node := range output.AccountProof {
-			hash := crypto.Keccak256(node)
-			err := p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), node)
-			if err != nil {
-				return fmt.Errorf("failed to set account proof preimage %s: %w", hash, err)
-			}
-		}
-
-		return nil
-
-	case l2.HintL2ExecutionWitness:
-		// hint = 32 bytes for block hash
-		if len(hintBytes) != 32 {
-			return fmt.Errorf("invalid L2 execution witness hint: %x", hint)
-		}
-
-		blockHash := common.Hash(hintBytes)
-		output, err := p.l2Fetcher.ExecutionWitness(ctx, blockHash)
-		if err != nil {
-			return fmt.Errorf("failed to fetch L2 execution witness for block %s: %w", blockHash, err)
-		}
-
-		for codeHash := range output.Codes {
-			codeHashBytes, err := hexutil.Decode(codeHash)
-			if err != nil {
-				return fmt.Errorf("failed to parse execution witness code: %w", err)
-			}
-
-			hash := crypto.Keccak256(codeHashBytes)
-			err = p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), codeHashBytes)
-			if err != nil {
-				return fmt.Errorf("failed to set account proof preimage %s: %w", hash, err)
-			}
-		}
-
-		return nil
 	}
 	return fmt.Errorf("unknown hint type: %v", hintType)
 }
@@ -383,7 +421,7 @@ func parseHint(hint string) (string, []byte, error) {
 
 	decodedArgs := make([][]byte, len(bytesStr))
 	for _, arg := range bytesStr {
-		argBytes, err := hex.DecodeString(arg)
+		argBytes, err := hexutil.Decode(arg)
 
 		if err != nil {
 			return "", make([]byte, 0), fmt.Errorf("invalid bytes: %s", bytesStr)

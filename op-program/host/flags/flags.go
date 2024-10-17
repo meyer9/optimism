@@ -48,7 +48,7 @@ var (
 		EnvVars: prefixEnvVars("L2_RPC"),
 	}
 	L2NodeExperimentalAddr = &cli.StringFlag{
-		Name:    "l2.experimental",
+		Name:    "l2.experimental.url",
 		Usage:   "Address of L2 JSON-RPC endpoint to use for experimental features (debug_executionWitness)",
 		EnvVars: prefixEnvVars("L2_RPC_EXPERIMENTAL_RPC"),
 	}

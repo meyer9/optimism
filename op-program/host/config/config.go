@@ -202,6 +202,7 @@ func NewConfigFromCLI(log log.Logger, ctx *cli.Context) (*Config, error) {
 	if !slices.Contains(types.SupportedDataFormats, dbFormat) {
 		return nil, fmt.Errorf("invalid %w: %v", ErrInvalidDataFormat, dbFormat)
 	}
+	fmt.Println(ctx.Bool(flags.L2NodeExperimentalEnabled.Name))
 	return &Config{
 		Rollup:                rollupCfg,
 		DataDir:               ctx.String(flags.DataDir.Name),
