@@ -72,9 +72,11 @@ func runDerivation(logger log.Logger, cfg *rollup.Config, l2Cfg *params.ChainCon
 
 	l2Source := l2.NewOracleEngine(cfg, logger, engineBackend, func(blockNum uint64) {
 		hClient.Hint(l2.AccountProofHint{BlockNumber: blockNum, Address: predeploys.L2ToL1MessagePasserAddr})
+	}, func(blockNum uint64) {
+		hClient.Hint(l2.ExecutionWitnessHint{BlockNum: blockNum})
 	})
 
-	logger.Info("Starting derivation")
+	logger.Info("Starting derivation", "l2ClaimBlockNum", l2ClaimBlockNum)
 	d := cldr.NewDriver(logger, cfg, l1Source, l1BlobsSource, l2Source, l2ClaimBlockNum)
 	if err := d.RunComplete(); err != nil {
 		return fmt.Errorf("failed to run program to completion: %w", err)
