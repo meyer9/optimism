@@ -84,11 +84,9 @@ func NewPrefetcher(logger log.Logger, l1Fetcher L1Source, l1BlobFetcher L1BlobSo
 func (p *Prefetcher) Hint(hint string) error {
 	p.logger.Trace("Received hint", "hint", hint)
 	hintType, _, err := parseHint(hint)
-	if err != nil {
-		return err
-	}
 
-	if hintType == l2.HintL2ExecutionWitness || hintType == l2.HintL2AccountProof {
+	// ignore parsing error, and assume non-bulk hint
+	if err != nil && hintType == l2.HintL2ExecutionWitness || hintType == l2.HintL2AccountProof {
 		p.lastBulkHint = hint
 	} else {
 		p.lastHint = hint
@@ -102,6 +100,7 @@ func (p *Prefetcher) GetPreimage(ctx context.Context, key common.Hash) ([]byte, 
 	// Use a loop to keep retrying the prefetch as long as the key is not found
 	// This handles the case where the prefetch downloads a preimage, but it is then deleted unexpectedly
 	// before we get to read it.
+	fmt.Println(p.lastHint, err)
 	for errors.Is(err, kvstore.ErrNotFound) && p.lastHint != "" {
 		hint := p.lastHint
 		if err := p.prefetch(ctx, hint); err != nil {

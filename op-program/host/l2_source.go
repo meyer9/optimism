@@ -33,25 +33,36 @@ type L2Source struct {
 
 var _ prefetcher.L2Source = &L2Source{}
 
-func NewL2Source(ctx context.Context, logger log.Logger, config *config.Config) (*L2Source, error) {
-	logger.Info("Connecting to canonical L2 source", "url", config.L2URL)
-	// eth_getProof calls are expensive and takes time, so we use a longer timeout
-	canonicalL2RPC, err := client.NewRPC(ctx, logger, config.L2URL, client.WithDialBackoff(10), client.WithCallTimeout(5*time.Minute))
-	if err != nil {
-		return nil, err
-	}
-	canonicalL2ClientCfg := sources.L2ClientDefaultConfig(config.Rollup, true)
-	canonicalL2Client, err := NewL2Client(canonicalL2RPC, logger, nil, &L2ClientConfig{L2ClientConfig: canonicalL2ClientCfg, L2Head: config.L2Head})
-	if err != nil {
-		return nil, err
-	}
-	canonicalDebugClient := sources.NewDebugClient(canonicalL2RPC.CallContext)
-
+// NewL2SourceWithClient creates a new L2 source with the given client as the canonical client.
+// This doesn't configure the experimental source, but is useful for testing.
+func NewL2SourceWithClient(logger log.Logger, canonicalL2Client *L2Client, canonicalDebugClient *sources.DebugClient) *L2Source {
 	source := &L2Source{
 		logger:               logger,
 		canonicalEthClient:   canonicalL2Client,
 		canonicalDebugClient: canonicalDebugClient,
 	}
+
+	return source
+}
+
+func NewL2Source(ctx context.Context, logger log.Logger, config *config.Config) (*L2Source, error) {
+	logger.Info("Connecting to canonical L2 source", "url", config.L2URL)
+
+	// eth_getProof calls are expensive and takes time, so we use a longer timeout
+	canonicalL2RPC, err := client.NewRPC(ctx, logger, config.L2URL, client.WithDialBackoff(10), client.WithCallTimeout(5*time.Minute))
+	if err != nil {
+		return nil, err
+	}
+	canonicalDebugClient := sources.NewDebugClient(canonicalL2RPC.CallContext)
+
+	canonicalL2ClientCfg := sources.L2ClientDefaultConfig(config.Rollup, true)
+	canonicalL2Client, err := NewL2Client(canonicalL2RPC, logger, nil, &L2ClientConfig{L2ClientConfig: canonicalL2ClientCfg, L2Head: config.L2Head})
+	if err != nil {
+		return nil, err
+	}
+
+	source := NewL2SourceWithClient(logger, canonicalL2Client, canonicalDebugClient)
+
 	if !config.L2ExperimentalEnabled {
 		return source, nil
 	}
