@@ -86,7 +86,7 @@ func (p *Prefetcher) Hint(hint string) error {
 	hintType, _, err := parseHint(hint)
 
 	// ignore parsing error, and assume non-bulk hint
-	if err != nil && hintType == l2.HintL2ExecutionWitness || hintType == l2.HintL2AccountProof {
+	if err == nil && hintType == l2.HintL2ExecutionWitness || hintType == l2.HintL2AccountProof {
 		p.lastBulkHint = hint
 	} else {
 		p.lastHint = hint
