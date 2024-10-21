@@ -132,7 +132,7 @@ func (p *Prefetcher) bulkPrefetch(ctx context.Context, hint string) error {
 		blockNum := binary.BigEndian.Uint64(blockNumBytes)
 
 		address := common.Address(hintBytes[8:])
-		output, err := p.l2Fetcher.GetProof(context.TODO(), address, []common.Hash{{}}, hexutil.EncodeUint64(blockNum))
+		output, err := p.l2Fetcher.GetProof(ctx, address, []common.Hash{{}}, hexutil.EncodeUint64(blockNum))
 		if err != nil {
 			return fmt.Errorf("failed to fetch account proof for address %s: %w", address, err)
 		}
@@ -168,7 +168,7 @@ func (p *Prefetcher) bulkPrefetch(ctx context.Context, hint string) error {
 		}
 
 		blockNum := binary.BigEndian.Uint64(hintBytes)
-		output, err := p.l2Fetcher.ExecutionWitness(context.TODO(), blockNum)
+		output, err := p.l2Fetcher.ExecutionWitness(ctx, blockNum)
 		if err != nil {
 			return fmt.Errorf("failed to fetch L2 execution witness for block %d: %w", blockNum, err)
 		}
