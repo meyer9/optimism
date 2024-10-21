@@ -6,7 +6,6 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-program/host/config"
 	"github.com/ethereum-optimism/optimism/op-program/host/prefetcher"
-	programTypes "github.com/ethereum-optimism/optimism/op-program/host/types"
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
@@ -113,7 +112,7 @@ func (l *L2Source) OutputByRoot(ctx context.Context, root common.Hash) (eth.Outp
 }
 
 // ExecutionWitness implements prefetcher.L2Source.
-func (l *L2Source) ExecutionWitness(ctx context.Context, blockNum uint64) (*programTypes.ExecutionWitness, error) {
+func (l *L2Source) ExecutionWitness(ctx context.Context, blockNum uint64) (*eth.ExecutionWitness, error) {
 	if !l.experimentalEnabled {
 		l.logger.Error("Experimental source is not enabled, cannot fetch execution witness", "blockNum", blockNum)
 		panic("experimental source is not enabled")

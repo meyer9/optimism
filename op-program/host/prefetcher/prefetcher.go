@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-program/client/l2"
 	"github.com/ethereum-optimism/optimism/op-program/client/mpt"
 	"github.com/ethereum-optimism/optimism/op-program/host/kvstore"
-	programTypes "github.com/ethereum-optimism/optimism/op-program/host/types"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -55,7 +54,7 @@ type L2Source interface {
 	// GetProof returns an account proof result, with any optional requested storage proofs.
 	GetProof(ctx context.Context, address common.Address, storage []common.Hash, blockTag string) (*eth.AccountResult, error)
 	// ExecutionWitness returns the execution witness for the given block hash.
-	ExecutionWitness(ctx context.Context, blockNum uint64) (*programTypes.ExecutionWitness, error)
+	ExecutionWitness(ctx context.Context, blockNum uint64) (*eth.ExecutionWitness, error)
 }
 
 type Prefetcher struct {
@@ -185,6 +184,14 @@ func (p *Prefetcher) bulkPrefetch(ctx context.Context, hint string) error {
 			codeValBytes, err := hexutil.Decode(codeVal)
 			if err != nil {
 				return fmt.Errorf("failed to parse execution witness code: %w", err)
+			}
+
+			// TODO: remove
+			// codeValBytes usually have 33 bytes of 0s at the end which we need to remove
+
+			// if the hash doesn't match, we need to remove the 33 bytes of 0s at the end
+			if !bytes.Equal(codeKeyBytes, crypto.Keccak256(codeValBytes)) {
+				codeValBytes = codeValBytes[:len(codeValBytes)-33]
 			}
 
 			err = p.kvStore.Put(preimage.Keccak256Key(codeKeyBytes).PreimageKey(), codeValBytes)

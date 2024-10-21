@@ -44,7 +44,6 @@ func (o *DebugClient) dbGet(ctx context.Context, key []byte) ([]byte, error) {
 	var node hexutil.Bytes
 	err := o.callContext(ctx, &node, "debug_dbGet", hexutil.Encode(key))
 	if err != nil {
-		fmt.Println(hexutil.Encode(key))
 		return nil, fmt.Errorf("fetch error %x: %w", key, err)
 	}
 	return node, nil

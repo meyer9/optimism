@@ -4,7 +4,6 @@ import (
 	"context"
 	"math"
 
-	programTypes "github.com/ethereum-optimism/optimism/op-program/host/types"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/retry"
 	"github.com/ethereum/go-ethereum/common"
@@ -153,8 +152,8 @@ func (s *RetryingL2Source) GetProof(ctx context.Context, address common.Address,
 	})
 }
 
-func (s *RetryingL2Source) ExecutionWitness(ctx context.Context, blockNum uint64) (*programTypes.ExecutionWitness, error) {
-	return retry.Do(ctx, maxAttempts, s.strategy, func() (*programTypes.ExecutionWitness, error) {
+func (s *RetryingL2Source) ExecutionWitness(ctx context.Context, blockNum uint64) (*eth.ExecutionWitness, error) {
+	return retry.Do(ctx, maxAttempts, s.strategy, func() (*eth.ExecutionWitness, error) {
 		w, err := s.source.ExecutionWitness(ctx, blockNum)
 		if err != nil {
 			s.logger.Warn("Failed to fetch execution witness", "blockNum", blockNum, "err", err)

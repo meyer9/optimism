@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-program/client/l1"
 	"github.com/ethereum-optimism/optimism/op-program/client/l2"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
-	"github.com/ethereum-optimism/optimism/op-service/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -70,11 +69,7 @@ func runDerivation(logger log.Logger, cfg *rollup.Config, l2Cfg *params.ChainCon
 		return fmt.Errorf("failed to create oracle-backed L2 chain: %w", err)
 	}
 
-	l2Source := l2.NewOracleEngine(cfg, logger, engineBackend, func(blockNum uint64) {
-		hClient.Hint(l2.AccountProofHint{BlockNumber: blockNum, Address: predeploys.L2ToL1MessagePasserAddr})
-	}, func(blockNum uint64) {
-		hClient.Hint(l2.ExecutionWitnessHint{BlockNum: blockNum})
-	})
+	l2Source := l2.NewOracleEngine(cfg, logger, engineBackend, hClient)
 
 	logger.Info("Starting derivation", "l2ClaimBlockNum", l2ClaimBlockNum)
 	d := cldr.NewDriver(logger, cfg, l1Source, l1BlobsSource, l2Source, l2ClaimBlockNum)

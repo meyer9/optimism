@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/ethereum-optimism/optimism/op-program/host/prefetcher"
-	"github.com/ethereum-optimism/optimism/op-program/host/types"
 	"github.com/ethereum-optimism/optimism/op-service/client"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -34,8 +34,8 @@ func (s *L2ExperimentalClient) NodeByHash(ctx context.Context, hash common.Hash)
 	panic("unsupported")
 }
 
-func (s *L2ExperimentalClient) ExecutionWitness(ctx context.Context, blockNum uint64) (*types.ExecutionWitness, error) {
-	var witness types.ExecutionWitness
+func (s *L2ExperimentalClient) ExecutionWitness(ctx context.Context, blockNum uint64) (*eth.ExecutionWitness, error) {
+	var witness eth.ExecutionWitness
 
 	err := s.client.CallContext(ctx, &witness, "debug_executionWitness", hexutil.EncodeUint64(blockNum), true)
 	if err != nil {

@@ -9,8 +9,3 @@ const (
 )
 
 var SupportedDataFormats = []DataFormat{DataFormatFile, DataFormatDirectory, DataFormatPebble}
-
-type ExecutionWitness struct {
-	Codes map[string]string
-	State map[string]string
-}

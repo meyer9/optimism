@@ -24,11 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// type L2Source struct {
-// 	*L2Client
-// 	*sources.DebugClient
-// }
-
 type Prefetcher interface {
 	Hint(hint string) error
 	GetPreimage(ctx context.Context, key common.Hash) ([]byte, error)

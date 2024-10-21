@@ -74,15 +74,13 @@ func (l AccountProofHint) Hint() string {
 	return HintL2AccountProof + " " + hexutil.Encode(blockNumBytes[:]) + " " + l.Address.Hex()
 }
 
-type ExecutionWitnessHint struct {
-	BlockNum uint64
-}
+type ExecutionWitnessHint uint64
 
-var _ preimage.Hint = ExecutionWitnessHint{}
+var _ preimage.Hint = ExecutionWitnessHint(0)
 
 func (l ExecutionWitnessHint) Hint() string {
 	var blockNumBytes [8]byte
-	binary.BigEndian.PutUint64(blockNumBytes[:], l.BlockNum)
+	binary.BigEndian.PutUint64(blockNumBytes[:], uint64(l))
 
 	return HintL2ExecutionWitness + " " + hexutil.Encode(blockNumBytes[:])
 }
