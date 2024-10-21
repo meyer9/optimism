@@ -100,7 +100,6 @@ func (p *Prefetcher) GetPreimage(ctx context.Context, key common.Hash) ([]byte, 
 	// Use a loop to keep retrying the prefetch as long as the key is not found
 	// This handles the case where the prefetch downloads a preimage, but it is then deleted unexpectedly
 	// before we get to read it.
-	fmt.Println(p.lastHint, err)
 	for errors.Is(err, kvstore.ErrNotFound) && p.lastHint != "" {
 		hint := p.lastHint
 		if err := p.prefetch(ctx, hint); err != nil {
