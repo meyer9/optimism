@@ -119,98 +119,75 @@ func (p *Prefetcher) bulkPrefetch(ctx context.Context, hint string) error {
 	if err != nil {
 		return err
 	}
-	p.logger.Debug("Bulk prefetching", "type", hintType, "bytes", hexutil.Bytes(hintBytes))
+
+	p.logger.Debug("Prefetching", "type", hintType, "bytes", hexutil.Bytes(hintBytes))
 	switch hintType {
 	case l2.HintL2AccountProof:
-		// hint = 8 bytes for block num, 20 bytes for address
+		// account proofs include the block number and requested address in the hint
 		if len(hintBytes) != 28 {
-			return fmt.Errorf("invalid L2 account hint: %x", hintBytes)
+			return fmt.Errorf("invalid L2 account proof hint: %x", hintBytes)
 		}
 
 		blockNumBytes := hintBytes[:8]
-
 		blockNum := binary.BigEndian.Uint64(blockNumBytes)
 
 		address := common.Address(hintBytes[8:])
-		output, err := p.l2Fetcher.GetProof(ctx, address, []common.Hash{{}}, hexutil.EncodeUint64(blockNum))
+		result, err := p.l2Fetcher.GetProof(ctx, address, []common.Hash{{}}, hexutil.EncodeUint64(blockNum))
 		if err != nil {
 			return fmt.Errorf("failed to fetch account proof for address %s: %w", address, err)
 		}
 
-		for _, node := range output.AccountProof {
-			hash := crypto.Keccak256(node)
-			err := p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), node)
-			if err != nil {
-				return fmt.Errorf("failed to set account proof preimage %s: %w", hash, err)
-			}
+		if len(result.StorageProof) == 0 {
+			return fmt.Errorf("no storage proof found for address: %s", address)
 		}
 
-		if len(output.StorageProof) == 0 {
-			return fmt.Errorf("no storage proof found for address %s", address)
+		if err := p.storeNodes(result.AccountProof); err != nil {
+			return fmt.Errorf("failed to store account proof state: %w", err)
 		}
 
-		for _, node := range output.StorageProof[0].Proof {
-			hash := crypto.Keccak256(node)
-			err := p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), node)
-			if err != nil {
-				return fmt.Errorf("failed to set account proof preimage %s: %w", hash, err)
-			}
+		// set the preimage for storage proof
+		// execution witness for block contains accessed storage keys, so they aren't needed here
+		if err := p.storeNodes(result.StorageProof[0].Proof); err != nil {
+			return fmt.Errorf("failed to store storage proof state: %w", err)
 		}
 
 		return nil
 
 	case l2.HintL2ExecutionWitness:
-		p.logger.Info("fetching execution witness!", "hint", hint)
-
-		// hint = 8 bytes for block num
+		// 8 bytes for requested block number
 		if len(hintBytes) != 8 {
 			return fmt.Errorf("invalid L2 execution witness hint: %x", hint)
 		}
 
 		blockNum := binary.BigEndian.Uint64(hintBytes)
-		output, err := p.l2Fetcher.ExecutionWitness(ctx, blockNum)
+		result, err := p.l2Fetcher.ExecutionWitness(ctx, blockNum)
 		if err != nil {
 			return fmt.Errorf("failed to fetch L2 execution witness for block %d: %w", blockNum, err)
 		}
 
-		for codeKey, codeVal := range output.Codes {
-			codeKeyBytes, err := hexutil.Decode(codeKey)
+		values := make([]hexutil.Bytes, 0, len(result.State)+len(result.Codes))
+		for _, valueHex := range result.State {
+			valueBytes, err := hexutil.Decode(valueHex)
 			if err != nil {
-				return fmt.Errorf("failed to parse execution witness code: %w", err)
+				return fmt.Errorf("failed to parse execution witness state: %w", err)
 			}
 
-			codeValBytes, err := hexutil.Decode(codeVal)
-			if err != nil {
-				return fmt.Errorf("failed to parse execution witness code: %w", err)
-			}
-
-			err = p.kvStore.Put(preimage.Keccak256Key(codeKeyBytes).PreimageKey(), codeValBytes)
-			if err != nil {
-				return fmt.Errorf("failed to set account proof preimage %s: %w", common.Hash(codeKeyBytes), err)
-			}
+			values = append(values, valueBytes)
 		}
 
-		for stateHash, value := range output.State {
-			stateHashBytes, err := hexutil.Decode(stateHash)
+		for _, valueHex := range result.Codes {
+			valueBytes, err := hexutil.Decode(valueHex)
 			if err != nil {
-				return fmt.Errorf("failed to parse execution witness code: %w", err)
+				return fmt.Errorf("failed to parse execution witness codes: %w", err)
 			}
 
-			valueBytes, err := hexutil.Decode(value)
-			if err != nil {
-				return fmt.Errorf("failed to parse execution witness code: %w", err)
-			}
-
-			err = p.kvStore.Put(preimage.Keccak256Key(stateHashBytes).PreimageKey(), valueBytes)
-			if err != nil {
-				return fmt.Errorf("failed to set account proof preimage %s: %w", common.Hash(stateHashBytes), err)
-			}
+			values = append(values, valueBytes)
 		}
 
-		return nil
+		return p.storeNodes(values)
 	default:
 	}
-	return fmt.Errorf("unknown hint type: %v", hintType)
+	return fmt.Errorf("unknown bulk hint type: %v", hintType)
 }
 
 // prefetch fetches the lastHint and stores the preimages in the kv store. This may call bulkPrefetch if available which will cache multiple preimages at a time.
@@ -383,11 +360,11 @@ func (p *Prefetcher) prefetch(ctx context.Context, hint string) error {
 		return p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), output.Marshal())
 	}
 
-	// below here, bulk prefetchers should be used first
+	// some L2 state data can be fetched in bulk from block execution witnesses instead of direction from the MPT
+	// if we have a bulk hint, we should use it instead of the last hint (will fallback to last hint after bulk hint is cleared and request is retried)
 	if p.lastBulkHint != "" {
 		bulkHint := p.lastBulkHint
 		p.lastBulkHint = ""
-		p.logger.Info("Bulk prefetching", "hint", bulkHint)
 		return p.bulkPrefetch(ctx, bulkHint)
 	}
 
@@ -402,7 +379,6 @@ func (p *Prefetcher) prefetch(ctx context.Context, hint string) error {
 		if err != nil {
 			return fmt.Errorf("failed to fetch L2 state node %s: %w", hash, err)
 		}
-		p.logger.Info("Fetched L2 state node", "hash", hash, "node", hexutil.Encode(node))
 		return p.kvStore.Put(preimage.Keccak256Key(hash).PreimageKey(), node)
 	case l2.HintL2Code:
 		if len(hintBytes) != 32 {
@@ -436,6 +412,10 @@ func (p *Prefetcher) storeTransactions(txs types.Transactions) error {
 
 func (p *Prefetcher) storeTrieNodes(values []hexutil.Bytes) error {
 	_, nodes := mpt.WriteTrie(values)
+	return p.storeNodes(nodes)
+}
+
+func (p *Prefetcher) storeNodes(nodes []hexutil.Bytes) error {
 	for _, node := range nodes {
 		key := preimage.Keccak256Key(crypto.Keccak256Hash(node)).PreimageKey()
 		if err := p.kvStore.Put(key, node); err != nil {
