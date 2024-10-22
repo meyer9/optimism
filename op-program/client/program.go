@@ -59,8 +59,8 @@ func RunProgram(logger log.Logger, preimageOracle io.ReadWriter, preimageHinter 
 
 	if cfg.InteropEnabled {
 		bootInfo := boot.BootstrapInterop(pClient)
-		return interop.RunInteropProgram(logger, bootInfo, l1PreimageOracle, l2PreimageOracle, !cfg.SkipValidation)
+		return interop.RunInteropProgram(logger, bootInfo, l1PreimageOracle, l2PreimageOracle, !cfg.SkipValidation, hClient)
 	}
 	bootInfo := boot.NewBootstrapClient(pClient).BootInfo()
-	return RunPreInteropProgram(logger, bootInfo, l1PreimageOracle, l2PreimageOracle)
+	return RunPreInteropProgram(logger, bootInfo, l1PreimageOracle, l2PreimageOracle, hClient)
 }
