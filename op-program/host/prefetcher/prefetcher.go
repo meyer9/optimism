@@ -184,14 +184,6 @@ func (p *Prefetcher) bulkPrefetch(ctx context.Context, hint string) error {
 				return fmt.Errorf("failed to parse execution witness code: %w", err)
 			}
 
-			// TODO: remove
-			// codeValBytes usually have 33 bytes of 0s at the end which we need to remove
-
-			// if the hash doesn't match, we need to remove the 33 bytes of 0s at the end
-			if !bytes.Equal(codeKeyBytes, crypto.Keccak256(codeValBytes)) {
-				codeValBytes = codeValBytes[:len(codeValBytes)-33]
-			}
-
 			err = p.kvStore.Put(preimage.Keccak256Key(codeKeyBytes).PreimageKey(), codeValBytes)
 			if err != nil {
 				return fmt.Errorf("failed to set account proof preimage %s: %w", common.Hash(codeKeyBytes), err)
