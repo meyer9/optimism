@@ -46,7 +46,7 @@ func connectRPCs(ctx context.Context, logger log.Logger, urls []string) ([]clien
 	for i, url := range urls {
 		logger.Info("Connecting to L2 source", "url", url)
 		// eth_getProof calls are expensive and takes time, so we use a longer timeout
-		rpc, err := client.NewRPC(ctx, logger, url, client.WithDialAttempts(10), client.WithCallTimeout(5*time.Minute))
+		rpc, err := client.NewRPC(ctx, logger, url, client.WithDialAttempts(10), client.WithCallTimeout(120*time.Minute))
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to rpc URL %s: %w", url, err)
 		}
