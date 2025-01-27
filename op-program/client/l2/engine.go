@@ -46,7 +46,9 @@ func (o *OracleEngine) L2OutputRoot(l2ClaimBlockNum uint64) (common.Hash, eth.By
 		return common.Hash{}, eth.Bytes32{}, fmt.Errorf("failed to get L2 block at %d", l2ClaimBlockNum)
 	}
 
-	o.hinter.Hint(AccountProofHint{BlockHash: outBlock.Hash(), Address: predeploys.L2ToL1MessagePasserAddr})
+	chainID := eth.ChainIDFromUInt64(o.rollupCfg.L2ChainID.Uint64())
+	o.hinter.Hint(AccountProofHint{BlockHash: outBlock.Hash(), Address: predeploys.L2ToL1MessagePasserAddr, ChainID: chainID})
+
 	stateDB, err := o.backend.StateAt(outBlock.Root)
 	if err != nil {
 		return common.Hash{}, eth.Bytes32{}, fmt.Errorf("failed to open L2 state db at block %s: %w", outBlock.Hash(), err)
@@ -81,9 +83,11 @@ func (o *OracleEngine) GetPayload(ctx context.Context, payloadInfo eth.PayloadIn
 
 func (o *OracleEngine) ForkchoiceUpdate(ctx context.Context, state *eth.ForkchoiceState, attr *eth.PayloadAttributes) (*eth.ForkchoiceUpdatedResult, error) {
 	if attr != nil {
+		chainID := eth.ChainIDFromUInt64(o.rollupCfg.L2ChainID.Uint64())
 		o.hinter.Hint(PayloadWitnessHint{
 			ParentBlockHash:   state.HeadBlockHash,
 			PayloadAttributes: attr,
+			ChainID:           &chainID,
 		})
 	}
 
