@@ -123,6 +123,14 @@ func RegisterGameTypes(
 		}
 		registerTasks = append(registerTasks, NewAlphabetRegisterTask(faultTypes.AlphabetGameType, l2HeaderSource, rollupClient, syncValidator))
 	}
+
+	if cfg.TraceTypeEnabled(faultTypes.TraceTypeCannonKona) {
+		l2HeaderSource, rollupClient, syncValidator, err := clients.SingleChainClients()
+		if err != nil {
+			return nil, err
+		}
+		registerTasks = append(registerTasks, NewCannonRegisterTask(faultTypes.PermissionedGameType, cfg, m, vm.NewKonaExecutor(), l2HeaderSource, rollupClient, syncValidator))
+	}
 	for _, task := range registerTasks {
 		if err := task.Register(ctx, registry, oracles, systemClock, l1Clock, logger, m, txSender, gameFactory, caller, l1HeaderSource, selective, claimants); err != nil {
 			return clients.Close, fmt.Errorf("failed to register %v game type: %w", task.gameType, err)

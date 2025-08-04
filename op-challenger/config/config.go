@@ -81,9 +81,12 @@ type Config struct {
 	L2Rpcs        []string // L2 RPC Url
 
 	// Specific to the cannon trace provider
-	Cannon                        vm.Config
-	CannonAbsolutePreState        string   // File to load the absolute pre-state for Cannon traces from
-	CannonAbsolutePreStateBaseURL *url.URL // Base URL to retrieve absolute pre-states for Cannon traces from
+	Cannon                            vm.Config
+	CannonAbsolutePreState            string   // File to load the absolute pre-state for Cannon traces from
+	CannonAbsolutePreStateBaseURL     *url.URL // Base URL to retrieve absolute pre-states for Cannon traces from
+	CannonKona                        vm.Config
+	CannonKonaAbsolutePreState        string   // File to load the absolute pre-state for CannonKona traces from
+	CannonKonaAbsolutePreStateBaseURL *url.URL // Base URL to retrieve absolute pre-states for CannonKona traces from
 
 	// Specific to the asterisc trace provider
 	Asterisc                            vm.Config
@@ -127,6 +130,17 @@ func NewInteropConfig(
 		PprofConfig:   oppprof.DefaultCLIConfig(),
 
 		Datadir: datadir,
+
+		CannonKona: vm.Config{
+			VmType:          types.TraceTypeCannonKona,
+			L1:              l1EthRpc,
+			L1Beacon:        l1BeaconApi,
+			L2s:             l2Rpcs,
+			SnapshotFreq:    DefaultCannonSnapshotFreq,
+			InfoFreq:        DefaultCannonInfoFreq,
+			DebugInfo:       true,
+			BinarySnapshots: true,
+		},
 
 		Cannon: vm.Config{
 			VmType:          types.TraceTypeCannon,
@@ -190,6 +204,16 @@ func NewConfig(
 
 		Cannon: vm.Config{
 			VmType:          types.TraceTypeCannon,
+			L1:              l1EthRpc,
+			L1Beacon:        l1BeaconApi,
+			L2s:             []string{l2EthRpc},
+			SnapshotFreq:    DefaultCannonSnapshotFreq,
+			InfoFreq:        DefaultCannonInfoFreq,
+			DebugInfo:       true,
+			BinarySnapshots: true,
+		},
+		CannonKona: vm.Config{
+			VmType:          types.TraceTypeCannonKona,
 			L1:              l1EthRpc,
 			L1Beacon:        l1BeaconApi,
 			L2s:             []string{l2EthRpc},
